@@ -1,0 +1,56 @@
+diff --git a/node_modules/bitcoin-json-rpc/dist/esm/BitcoinJsonRpc.d.ts b/node_modules/bitcoin-json-rpc/dist/esm.disabled/BitcoinJsonRpc.d.ts
+similarity index 100%
+rename from node_modules/bitcoin-json-rpc/dist/esm/BitcoinJsonRpc.d.ts
+rename to node_modules/bitcoin-json-rpc/dist/esm.disabled/BitcoinJsonRpc.d.ts
+diff --git a/node_modules/bitcoin-json-rpc/dist/esm/BitcoinJsonRpc.js b/node_modules/bitcoin-json-rpc/dist/esm.disabled/BitcoinJsonRpc.js
+similarity index 100%
+rename from node_modules/bitcoin-json-rpc/dist/esm/BitcoinJsonRpc.js
+rename to node_modules/bitcoin-json-rpc/dist/esm.disabled/BitcoinJsonRpc.js
+diff --git a/node_modules/bitcoin-json-rpc/dist/esm/BitcoinJsonRpcError.d.ts b/node_modules/bitcoin-json-rpc/dist/esm.disabled/BitcoinJsonRpcError.d.ts
+similarity index 100%
+rename from node_modules/bitcoin-json-rpc/dist/esm/BitcoinJsonRpcError.d.ts
+rename to node_modules/bitcoin-json-rpc/dist/esm.disabled/BitcoinJsonRpcError.d.ts
+diff --git a/node_modules/bitcoin-json-rpc/dist/esm/BitcoinJsonRpcError.js b/node_modules/bitcoin-json-rpc/dist/esm.disabled/BitcoinJsonRpcError.js
+similarity index 100%
+rename from node_modules/bitcoin-json-rpc/dist/esm/BitcoinJsonRpcError.js
+rename to node_modules/bitcoin-json-rpc/dist/esm.disabled/BitcoinJsonRpcError.js
+diff --git a/node_modules/bitcoin-json-rpc/dist/esm/index.d.ts b/node_modules/bitcoin-json-rpc/dist/esm.disabled/index.d.ts
+similarity index 100%
+rename from node_modules/bitcoin-json-rpc/dist/esm/index.d.ts
+rename to node_modules/bitcoin-json-rpc/dist/esm.disabled/index.d.ts
+diff --git a/node_modules/bitcoin-json-rpc/dist/esm/index.js b/node_modules/bitcoin-json-rpc/dist/esm.disabled/index.js
+similarity index 100%
+rename from node_modules/bitcoin-json-rpc/dist/esm/index.js
+rename to node_modules/bitcoin-json-rpc/dist/esm.disabled/index.js
+diff --git a/node_modules/bitcoin-json-rpc/dist/esm/json-rpc.d.ts b/node_modules/bitcoin-json-rpc/dist/esm.disabled/json-rpc.d.ts
+similarity index 100%
+rename from node_modules/bitcoin-json-rpc/dist/esm/json-rpc.d.ts
+rename to node_modules/bitcoin-json-rpc/dist/esm.disabled/json-rpc.d.ts
+diff --git a/node_modules/bitcoin-json-rpc/dist/esm/json-rpc.js b/node_modules/bitcoin-json-rpc/dist/esm.disabled/json-rpc.js
+similarity index 100%
+rename from node_modules/bitcoin-json-rpc/dist/esm/json-rpc.js
+rename to node_modules/bitcoin-json-rpc/dist/esm.disabled/json-rpc.js
+diff --git a/node_modules/bitcoin-json-rpc/dist/esm/schemas.d.ts b/node_modules/bitcoin-json-rpc/dist/esm.disabled/schemas.d.ts
+similarity index 100%
+rename from node_modules/bitcoin-json-rpc/dist/esm/schemas.d.ts
+rename to node_modules/bitcoin-json-rpc/dist/esm.disabled/schemas.d.ts
+diff --git a/node_modules/bitcoin-json-rpc/dist/esm/schemas.js b/node_modules/bitcoin-json-rpc/dist/esm.disabled/schemas.js
+similarity index 100%
+rename from node_modules/bitcoin-json-rpc/dist/esm/schemas.js
+rename to node_modules/bitcoin-json-rpc/dist/esm.disabled/schemas.js
+diff --git a/node_modules/bitcoin-json-rpc/dist/esm/types.d.ts b/node_modules/bitcoin-json-rpc/dist/esm.disabled/types.d.ts
+similarity index 100%
+rename from node_modules/bitcoin-json-rpc/dist/esm/types.d.ts
+rename to node_modules/bitcoin-json-rpc/dist/esm.disabled/types.d.ts
+diff --git a/node_modules/bitcoin-json-rpc/dist/esm/types.js b/node_modules/bitcoin-json-rpc/dist/esm.disabled/types.js
+similarity index 100%
+rename from node_modules/bitcoin-json-rpc/dist/esm/types.js
+rename to node_modules/bitcoin-json-rpc/dist/esm.disabled/types.js
+diff --git a/node_modules/bitcoin-json-rpc/dist/esm/utils.d.ts b/node_modules/bitcoin-json-rpc/dist/esm.disabled/utils.d.ts
+similarity index 100%
+rename from node_modules/bitcoin-json-rpc/dist/esm/utils.d.ts
+rename to node_modules/bitcoin-json-rpc/dist/esm.disabled/utils.d.ts
+diff --git a/node_modules/bitcoin-json-rpc/dist/esm/utils.js b/node_modules/bitcoin-json-rpc/dist/esm.disabled/utils.js
+similarity index 100%
+rename from node_modules/bitcoin-json-rpc/dist/esm/utils.js
+rename to node_modules/bitcoin-json-rpc/dist/esm.disabled/utils.js

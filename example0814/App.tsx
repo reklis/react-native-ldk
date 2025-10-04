@@ -1,45 +1,53 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
+import './shim';
+import React, { ReactElement, useEffect, useState } from 'react';
+import { Button, SafeAreaView, StyleSheet, View } from 'react-native';
 
-import { NewAppScreen } from '@react-native/new-app-screen';
-import { StatusBar, StyleSheet, useColorScheme, View } from 'react-native';
-import {
-  SafeAreaProvider,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+import Tests from './Tests';
+import Dev from './Dev';
+import { getItem, setItem } from './ldk';
 
-function App() {
-  const isDarkMode = useColorScheme() === 'dark';
+const App = (): ReactElement => {
+	const [tab, setTab] = useState('');
 
-  return (
-    <SafeAreaProvider>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <AppContent />
-    </SafeAreaProvider>
-  );
-}
+	useEffect(() => {
+		getItem('tab').then((t) => {
+			handleChangeTab(t || 'tests');
+		});
+	});
 
-function AppContent() {
-  const safeAreaInsets = useSafeAreaInsets();
+	const handleChangeTab = (t: string): void => {
+		setTab(t);
+		setItem('tab', t);
+	};
 
-  return (
-    <View style={styles.container}>
-      <NewAppScreen
-        templateFileName="App.tsx"
-        safeAreaInsets={safeAreaInsets}
-      />
-    </View>
-  );
-}
+	return (
+		<SafeAreaView style={styles.root}>
+			<View style={styles.row}>
+				{['dev', 'tests'].map((t) => (
+					<Button
+						testID={t}
+						key={t}
+						title={t}
+						onPress={(): void => handleChangeTab(t)}
+					/>
+				))}
+			</View>
+
+			{tab === 'dev' && <Dev />}
+			{tab === 'tests' && <Tests />}
+		</SafeAreaView>
+	);
+};
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+	root: {
+		flex: 1,
+	},
+	row: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'center',
+	},
 });
 
 export default App;
