@@ -133,5 +133,5 @@ dependencies {
   implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0"
   implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0"
   // implementation files('libs/ldk-java-javadoc.jar') // Used to get code completion in Kotlin but won't compile with it
-  compileOnly files('libs/LDK-release.aar')
+  implementation files('libs/LDK-release.aar')
 }
