@@ -1,4 +1,5 @@
 apply plugin: "com.android.application"
+apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
 /**
@@ -114,6 +115,15 @@ dependencies {
     implementation("com.facebook.react:react-android")
     implementation files("../../node_modules/@synonymdev/react-native-ldk/android/libs/LDK-release.aar")
 
+    // Explicit native module dependencies
+    implementation project(':react-native-async-storage_async-storage')
+    implementation project(':react-native-clipboard_clipboard')
+    implementation project(':react-native-fs')
+    implementation project(':react-native-keychain')
+    implementation project(':react-native-randombytes')
+    implementation project(':react-native-tcp-socket')
+    implementation project(':synonymdev_react-native-ldk')
+
     debugImplementation("com.facebook.flipper:flipper:${FLIPPER_VERSION}")
     debugImplementation("com.facebook.flipper:flipper-network-plugin:${FLIPPER_VERSION}") {
         exclude group:'com.squareup.okhttp3', module:'okhttp'
@@ -134,4 +144,3 @@ configurations.all {
         force 'androidx.test:core:1.5.0'
     }
 }
-apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesAppBuildGradle(project)
