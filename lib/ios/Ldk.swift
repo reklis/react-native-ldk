@@ -1217,11 +1217,120 @@ class Ldk: NSObject {
         guard let channelManager = channelManager else {
             return handleReject(reject, .init_channel_manager)
         }
-        
+
         channelManager.abandonPayment(paymentId: String(paymentId).hexaBytes)
         handleResolve(resolve, .abandon_payment_success)
     }
-    
+
+    @objc
+    func sendKeysend(_ destinationPubKey: NSString, amountSats: NSInteger, customTlvs: NSArray, timeoutSeconds: NSInteger, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+        guard let channelManager = channelManager else {
+            return handleReject(reject, .init_channel_manager)
+        }
+
+        // Generate random preimage (32 bytes)
+        var preimage = [UInt8](repeating: 0, count: 32)
+        let status = SecRandomCopyBytes(kSecRandomDefault, 32, &preimage)
+        guard status == errSecSuccess else {
+            return handleReject(reject, .unknown_error, message: "Failed to generate random preimage")
+        }
+
+        // Generate payment ID (32 bytes)
+        var paymentIdBytes = [UInt8](repeating: 0, count: 32)
+        let paymentIdStatus = SecRandomCopyBytes(kSecRandomDefault, 32, &paymentIdBytes)
+        guard paymentIdStatus == errSecSuccess else {
+            return handleReject(reject, .unknown_error, message: "Failed to generate payment ID")
+        }
+
+        // Parse destination public key
+        let destPubKeyStr = String(destinationPubKey)
+        guard let destPubKeyBytes = destPubKeyStr.hexaBytes, destPubKeyBytes.count == 33 else {
+            return handleReject(reject, .unknown_error, message: "Invalid destination public key")
+        }
+
+        // Build custom TLV records
+        var customRecords: [(UInt64, [UInt8])] = []
+
+        // Add custom TLVs from parameters
+        for tlvObj in customTlvs {
+            guard let tlv = tlvObj as? [String: Any],
+                  let type = tlv["type"] as? NSNumber,
+                  let value = tlv["value"] as? String else {
+                continue
+            }
+
+            let valueBytes = Array(value.utf8)
+            customRecords.append((type.uint64Value, valueBytes))
+        }
+
+        // Create RecipientOnionFields with preimage and custom TLVs
+        let recipientOnion: RecipientOnionFields
+        if customRecords.isEmpty {
+            recipientOnion = RecipientOnionFields.secretOnly(paymentSecret: preimage)
+        } else {
+            recipientOnion = RecipientOnionFields.initWithCustomTlvs(paymentSecret: preimage, paymentMetadata: nil, customTlvs: customRecords)
+        }
+
+        // Create route parameters for spontaneous payment
+        let paymentParams = PaymentParameters.initForKeysend(
+            payeePubkey: destPubKeyBytes,
+            finalCltvExpiryDelta: 144, // Standard CLTV delta
+            allowMpp: false
+        )
+
+        let routeParams = RouteParameters(
+            paymentParamsArg: paymentParams,
+            finalValueMsatArg: UInt64(amountSats * 1000),
+            maxTotalRoutingFeeMsatArg: nil
+        )
+
+        // Send spontaneous payment with retry
+        let result = channelManager.sendSpontaneousPaymentWithRetry(
+            paymentPreimage: preimage,
+            recipientOnion: recipientOnion,
+            paymentId: paymentIdBytes,
+            routeParams: routeParams,
+            retryStrategy: .initWithTimeout(a: UInt64(timeoutSeconds))
+        )
+
+        // Get payment hash from result
+        let paymentHash: [UInt8]
+        if result.isOk() {
+            paymentHash = result.getValue() ?? Bindings.swiftSha256(data: preimage)
+        } else {
+            paymentHash = Bindings.swiftSha256(data: preimage)
+        }
+
+        // Persist payment info
+        channelManagerPersister.persistPaymentSent([
+            "payment_id": Data(paymentIdBytes).hexEncodedString(),
+            "payment_hash": Data(paymentHash).hexEncodedString(),
+            "amount_sat": amountSats,
+            "unix_timestamp": Int(Date().timeIntervalSince1970),
+            "state": result.isOk() ? "pending" : "failed",
+            "description": "Keysend payment"
+        ])
+
+        if result.isOk() {
+            return resolve(Data(paymentIdBytes).hexEncodedString())
+        }
+
+        guard let error = result.getError() else {
+            return handleReject(reject, .invoice_payment_fail_unknown)
+        }
+
+        switch error {
+        case .DuplicatePayment:
+            return handleReject(reject, .invoice_payment_fail_duplicate_payment)
+        case .PaymentExpired:
+            return handleReject(reject, .invoice_payment_fail_payment_expired)
+        case .RouteNotFound:
+            return handleReject(reject, .invoice_payment_fail_route_not_found)
+        @unknown default:
+            return handleReject(reject, .invoice_payment_fail_unknown)
+        }
+    }
+
     @objc
     func createPaymentRequest(_ amountSats: NSInteger, description: NSString, expiryDelta: NSInteger, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
         guard let channelManager = channelManager else {

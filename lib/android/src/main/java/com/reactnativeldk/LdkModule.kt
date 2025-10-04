@@ -1113,6 +1113,127 @@ class LdkModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaMod
     }
 
     @ReactMethod
+    fun sendKeysend(destinationPubKey: String, amountSats: Double, customTlvs: ReadableArray, timeoutSeconds: Double, promise: Promise) {
+        channelManager ?: return handleReject(promise, LdkErrors.init_channel_manager)
+
+        // Generate random preimage (32 bytes)
+        val preimage = ByteArray(32)
+        SecureRandom().nextBytes(preimage)
+
+        // Generate payment ID (32 bytes)
+        val paymentId = ByteArray(32)
+        SecureRandom().nextBytes(paymentId)
+
+        // Parse destination public key
+        val destPubKeyBytes = try {
+            destinationPubKey.hexa()
+        } catch (e: Exception) {
+            return handleReject(promise, LdkErrors.unknown_error, Error("Invalid destination public key"))
+        }
+
+        if (destPubKeyBytes.size != 33) {
+            return handleReject(promise, LdkErrors.unknown_error, Error("Invalid destination public key length"))
+        }
+
+        // Build custom TLV records
+        val customRecords = mutableListOf<Pair<Long, ByteArray>>()
+
+        // Add custom TLVs from parameters
+        for (i in 0 until customTlvs.size()) {
+            try {
+                val tlv = customTlvs.getMap(i)
+                val type = tlv?.getInt("type")?.toLong() ?: continue
+                val value = tlv.getString("value") ?: continue
+                val valueBytes = value.toByteArray(Charsets.UTF_8)
+                customRecords.add(Pair(type, valueBytes))
+            } catch (e: Exception) {
+                // Skip invalid TLV entries
+                continue
+            }
+        }
+
+        // Create RecipientOnionFields with preimage and custom TLVs
+        val recipientOnion = if (customRecords.isEmpty()) {
+            RecipientOnionFields.secret_only(preimage)
+        } else {
+            // Convert custom records to array of TwoTuples
+            val tlvArray = customRecords.map { (type, value) ->
+                TwoTuple_u64CVec_u8ZZ(type, value)
+            }.toTypedArray()
+
+            RecipientOnionFields.init(
+                preimage,
+                null, // payment_metadata
+                tlvArray
+            )
+        }
+
+        // Create route parameters for spontaneous payment
+        val paymentParams = PaymentParameters.for_keysend(
+            destPubKeyBytes,
+            144, // final_cltv_expiry_delta
+            false // allow_mpp
+        )
+
+        val routeParams = RouteParameters.init(
+            paymentParams,
+            (amountSats * 1000).toLong(), // final_value_msat
+            null // max_total_routing_fee_msat
+        )
+
+        // Send spontaneous payment with retry
+        val result = channelManager!!.send_spontaneous_payment_with_retry(
+            preimage,
+            recipientOnion,
+            paymentId,
+            routeParams,
+            Retry.timeout(timeoutSeconds.toLong())
+        )
+
+        // Get payment hash from result
+        val paymentHash = if (result.is_ok) {
+            (result as? org.ldk.structs.Result_ThirtyTwoBytesRetryableSendFailureZ.Result_ThirtyTwoBytesRetryableSendFailureZ_OK)?.res ?: run {
+                // Fallback: hash the preimage
+                val digest = java.security.MessageDigest.getInstance("SHA-256")
+                digest.digest(preimage)
+            }
+        } else {
+            // Hash the preimage to get payment hash
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            digest.digest(preimage)
+        }
+
+        channelManagerPersister.persistPaymentSent(hashMapOf(
+            "payment_id" to paymentId.hexEncodedString(),
+            "payment_hash" to paymentHash.hexEncodedString(),
+            "amount_sat" to amountSats.toInt(),
+            "unix_timestamp" to (System.currentTimeMillis() / 1000).toInt(),
+            "state" to if (result.is_ok) "pending" else "failed",
+            "description" to "Keysend payment"
+        ))
+
+        if (result.is_ok) {
+            return promise.resolve(paymentId.hexEncodedString())
+        }
+
+        val error = result as? Result_NoneRetryableSendFailureZ_Err
+            ?: return handleReject(promise, LdkErrors.invoice_payment_fail_unknown)
+
+        when (error.err) {
+            RetryableSendFailure.LDKRetryableSendFailure_DuplicatePayment -> {
+                handleReject(promise, LdkErrors.invoice_payment_fail_duplicate_payment)
+            }
+            RetryableSendFailure.LDKRetryableSendFailure_PaymentExpired -> {
+                handleReject(promise, LdkErrors.invoice_payment_fail_payment_expired)
+            }
+            RetryableSendFailure.LDKRetryableSendFailure_RouteNotFound -> {
+                handleReject(promise, LdkErrors.invoice_payment_fail_route_not_found)
+            }
+            else -> handleReject(promise, LdkErrors.invoice_payment_fail_unknown)
+        }
+    }
+
+    @ReactMethod
     fun createPaymentRequest(amountSats: Double, description: String, expiryDelta: Double, promise: Promise) {
         channelManager ?: return handleReject(promise, LdkErrors.init_channel_manager)
         keysManager ?: return handleReject(promise, LdkErrors.init_keys_manager)

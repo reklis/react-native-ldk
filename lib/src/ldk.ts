@@ -41,6 +41,7 @@ import {
 	TChannelMonitor,
 	TCreateChannelReq,
 	TFundChannelReq,
+	TKeysendReq,
 } from './utils/types';
 import { extractPaymentRequest } from './utils/helpers';
 
@@ -920,6 +921,44 @@ class LDK {
 			return ok(res);
 		} catch (e) {
 			this.writeErrorToLog('abandonPayment', e);
+			return err(e);
+		}
+	}
+
+	/**
+	 * Sends a keysend (spontaneous) payment without an invoice
+	 * @param destinationPubKey
+	 * @param amountSats
+	 * @param customTlvs
+	 * @param timeout
+	 * @returns {Promise<Err<unknown> | Ok<Ok<string> | Err<string>>>} Returns payment_id
+	 */
+	async sendKeysend({
+		destinationPubKey,
+		amountSats,
+		customTlvs = [],
+		timeout = 20000,
+	}: TKeysendReq): Promise<Result<string>> {
+		//If no usable channels don't even attempt payment
+		const channelsRes = await this.listUsableChannels();
+		if (channelsRes.isOk() && channelsRes.value.length === 0) {
+			const noUsableChannelsError = 'No usable channels found';
+			this.writeErrorToLog('sendKeysend', noUsableChannelsError);
+			return err(noUsableChannelsError);
+		}
+
+		try {
+			const timeoutSeconds = timeout / 1000; //Rust demands seconds
+			const res = await NativeLDK.sendKeysend(
+				destinationPubKey,
+				amountSats,
+				customTlvs,
+				timeoutSeconds,
+			);
+			this.writeDebugToLog('sendKeysend');
+			return ok(res);
+		} catch (e) {
+			this.writeErrorToLog('sendKeysend', e);
 			return err(e);
 		}
 	}

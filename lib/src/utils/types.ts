@@ -657,3 +657,45 @@ type TBackupFileState = {
 export type TBackupStateUpdate = {
 	[key: string]: TBackupFileState;
 };
+
+// Keysend and Podcasting 2.0 types
+export type TCustomTlv = {
+	type: number;
+	value: string;
+};
+
+export type TKeysendReq = {
+	destinationPubKey: string;
+	amountSats: number;
+	customTlvs?: TCustomTlv[];
+	timeout?: number; // ms
+};
+
+export type TLightningAddressReq = {
+	lightningAddress: string; // user@domain.com
+	amountSats: number;
+	customTlvs?: TCustomTlv[];
+	timeout?: number;
+};
+
+export type TPodcastingPaymentReq = {
+	destinationPubKey?: string;
+	lightningAddress?: string;
+	amountSats: number;
+	podcast?: string;
+	episode?: string;
+	action?: 'stream' | 'boost';
+	timestamp?: number;
+	customKey?: number;
+	customValue?: string;
+	timeout?: number;
+};
+
+export type TPodcastingMetadata = {
+	podcast?: string;
+	episode?: string;
+	action?: 'stream' | 'boost';
+	timestamp?: number;
+	app_name?: string;
+	value_msat_total?: number;
+};

@@ -59,7 +59,15 @@ import {
 	TLspLogEvent,
 	TChannelMonitor,
 	TCreateChannelReq,
+	TKeysendReq,
+	TLightningAddressReq,
+	TPodcastingPaymentReq,
 } from './utils/types';
+import { resolveLightningAddress } from './utils/lightning-address';
+import {
+	createPodcastingTlv,
+	createWalletRoutingTlv,
+} from './utils/podcasting';
 import {
 	appendPath,
 	findOutputsFromRawTxs,
@@ -1417,6 +1425,164 @@ class LightningManager {
 		this.paymentFailedSubscription && this.paymentFailedSubscription.remove();
 		this.paymentSentSubscription && this.paymentSentSubscription.remove();
 	};
+
+	/**
+	 * Sends a keysend (spontaneous) payment with timeout and event subscription
+	 * @param {TKeysendReq} req Keysend request parameters
+	 * @returns {Promise<Result<TChannelManagerPaymentSent>>}
+	 */
+	async sendKeysendWithTimeout(
+		req: TKeysendReq,
+	): Promise<Result<TChannelManagerPaymentSent>> {
+		const { timeout = 20000 } = req;
+
+		// Enable trace logging
+		await ldk.setLogLevel(ELdkLogLevels.trace, true);
+		await ldk.writeToLogFile(
+			'debug',
+			`Trace logging enabled for keysend payment`,
+		);
+
+		return new Promise(async (resolve) => {
+			try {
+				await ldk.writeToLogFile(
+					'debug',
+					`ldk.sendKeysend() called with hard timeout of ${timeout}ms`,
+				);
+
+				if (timeout < 1000) {
+					return resolve(err('Timeout must be at least 1000ms.'));
+				}
+
+				this.subscribeToPaymentResponses(resolve);
+
+				let keysendResponse: Result<string> | undefined =
+					await ldk.sendKeysend(req);
+
+				await ldk.writeToLogFile(
+					'debug',
+					keysendResponse.isOk()
+						? `ldk.sendKeysend() success (pending callbacks) Payment ID: ${keysendResponse.value}`
+						: `ldk.sendKeysend() error ${keysendResponse.error.message}.`,
+				);
+
+				if (!keysendResponse) {
+					this.unsubscribeFromPaymentSubscriptions();
+					return resolve(err('Unable to send keysend payment.'));
+				}
+
+				if (keysendResponse.isErr()) {
+					this.unsubscribeFromPaymentSubscriptions();
+					return resolve(err(keysendResponse.error.message));
+				}
+
+				//Save payment ids to file on keysendResponse success.
+				await this.appendLdkPaymentId(keysendResponse.value);
+			} finally {
+				// Disable trace logging after 10 seconds
+				setTimeout(async () => {
+					await ldk.setLogLevel(ELdkLogLevels.trace, false);
+					await ldk.writeToLogFile('debug', `Trace logging disabled`);
+				}, 10000);
+			}
+		});
+	}
+
+	/**
+	 * Sends a keysend payment to a Lightning Address
+	 * @param {TLightningAddressReq} req Lightning Address payment request
+	 * @returns {Promise<Result<TChannelManagerPaymentSent>>}
+	 */
+	async sendKeysendToLightningAddress(
+		req: TLightningAddressReq,
+	): Promise<Result<TChannelManagerPaymentSent>> {
+		const { lightningAddress, amountSats, customTlvs = [], timeout } = req;
+
+		// Resolve Lightning Address to public key
+		const resolveRes = await resolveLightningAddress(lightningAddress);
+		if (resolveRes.isErr()) {
+			return err(resolveRes.error);
+		}
+
+		const { pubkey } = resolveRes.value;
+
+		// Send keysend to resolved public key
+		return this.sendKeysendWithTimeout({
+			destinationPubKey: pubkey,
+			amountSats,
+			customTlvs,
+			timeout,
+		});
+	}
+
+	/**
+	 * Sends a Podcasting 2.0 value4value payment
+	 * @param {TPodcastingPaymentReq} req Podcasting payment request
+	 * @returns {Promise<Result<TChannelManagerPaymentSent>>}
+	 */
+	async sendPodcastingPayment(
+		req: TPodcastingPaymentReq,
+	): Promise<Result<TChannelManagerPaymentSent>> {
+		const {
+			destinationPubKey,
+			lightningAddress,
+			amountSats,
+			podcast,
+			episode,
+			action = 'stream',
+			timestamp,
+			customKey,
+			customValue,
+			timeout = 20000,
+		} = req;
+
+		// Must provide either destinationPubKey or lightningAddress
+		if (!destinationPubKey && !lightningAddress) {
+			return err(
+				'Must provide either destinationPubKey or lightningAddress for podcasting payment',
+			);
+		}
+
+		// Build custom TLVs
+		const customTlvs: any[] = [];
+
+		// Add Podcasting 2.0 metadata TLV if metadata provided
+		if (podcast || episode || action) {
+			const podcastingTlv = createPodcastingTlv({
+				podcast,
+				episode,
+				action,
+				timestamp: timestamp || Date.now(),
+				value_msat_total: amountSats * 1000,
+			});
+			customTlvs.push(podcastingTlv);
+		}
+
+		// Add custom wallet routing TLV if provided
+		if (customKey !== undefined && customValue !== undefined) {
+			customTlvs.push({
+				type: customKey,
+				value: customValue,
+			});
+		}
+
+		// Send to Lightning Address or direct public key
+		if (lightningAddress) {
+			return this.sendKeysendToLightningAddress({
+				lightningAddress,
+				amountSats,
+				customTlvs,
+				timeout,
+			});
+		}
+
+		return this.sendKeysendWithTimeout({
+			destinationPubKey: destinationPubKey!,
+			amountSats,
+			customTlvs,
+			timeout,
+		});
+	}
 
 	/**
 	 * Returns change destination script for the provided address.
