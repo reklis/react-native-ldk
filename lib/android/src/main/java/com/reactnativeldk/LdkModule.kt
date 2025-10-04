@@ -28,12 +28,17 @@ import java.net.InetSocketAddress
 import java.net.URL
 import java.nio.file.Files
 import java.nio.file.Paths
+import java.security.SecureRandom
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.*
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlin.coroutines.suspendCoroutine
 
 
 //MARK: ************Replicate in typescript and swift************
@@ -978,44 +983,66 @@ class LdkModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaMod
 
         LdkEventEmitter.send(EventTypes.native_log, "Deleted scorer and network graph, resyncing from scratch so we can retry payment")
 
-        // Download everything again and retry
-        downloadScorer(currentScorerDownloadUrl!!, 1.0, object : PromiseImpl(
-            { _ ->
-                LdkEventEmitter.send(EventTypes.native_log, "Scorer downloaded, initializing network graph...")
-                initNetworkGraph(currentNetwork, currentRapidGossipSyncUrl!!, 1.0, object : PromiseImpl(
-                    { _ ->
-                        LdkEventEmitter.send(EventTypes.native_log, "Network graph initialized, restarting channel manager...")
-                        restart(object : PromiseImpl(
-                            { _ ->
-                                // Run handleDroppedPeers on a background thread (can't work in the UI thread)
-                                Thread {
-                                    handleDroppedPeers()
-                                }.start()
+        // Download everything again and retry using coroutines
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // Download scorer
+                suspendCoroutine<Unit> { cont ->
+                    downloadScorer(currentScorerDownloadUrl!!, 1.0, PromiseImpl(
+                        { _ ->
+                            LdkEventEmitter.send(EventTypes.native_log, "Scorer downloaded, initializing network graph...")
+                            cont.resume(Unit)
+                        },
+                        { _ -> cont.resumeWithException(Exception(originalError.name)) }
+                    ))
+                }
 
-                                Thread.sleep(2500) //Wait a little as android peer connections happen async so we're just making sure they're all connected
-                                val channelsInGraph = networkGraph?.read_only()?.list_channels()?.size
-                                LdkEventEmitter.send(EventTypes.native_log, "Channels found in graph: $channelsInGraph")
-                                LdkEventEmitter.send(EventTypes.native_log, "Peers connected: ${peerManager?.list_peers()?.size}")
-                                LdkEventEmitter.send(EventTypes.native_log, "Restart complete. Attempting to retry payment after graph reset...")
-                                val (paymentId2, error2) = handlePayment(paymentRequest, amountSats, timeoutSeconds)
+                // Initialize network graph
+                suspendCoroutine<Unit> { cont ->
+                    initNetworkGraph(currentNetwork, currentRapidGossipSyncUrl!!, 1.0, PromiseImpl(
+                        { _ ->
+                            LdkEventEmitter.send(EventTypes.native_log, "Network graph initialized, restarting channel manager...")
+                            cont.resume(Unit)
+                        },
+                        { _ -> cont.resumeWithException(Exception(originalError.name)) }
+                    ))
+                }
 
-                                if (error2 != null) {
-                                    LdkEventEmitter.send(EventTypes.native_log, "Failed to retry payment after graph reset: $error2")
-                                    handleReject(promise, error2)
-                                } else {
-                                    LdkEventEmitter.send(EventTypes.native_log, "Successfully retried payment after graph reset")
-                                    // 2nd attempt found a path with fresh graph
-                                    promise.resolve(paymentId2)
-                                }
-                            },
-                            { _ -> handleReject(promise, originalError) }
-                        ) {})
-                    },
-                    { _ -> handleReject(promise, originalError) }
-                ) {})
-            },
-            { _ -> handleReject(promise, originalError) }
-        ) {})
+                // Restart
+                suspendCoroutine<Unit> { cont ->
+                    restart(PromiseImpl(
+                        { _ -> cont.resume(Unit) },
+                        { _ -> cont.resumeWithException(Exception(originalError.name)) }
+                    ))
+                }
+
+                // Run handleDroppedPeers on a background thread
+                withContext(Dispatchers.Default) {
+                    handleDroppedPeers()
+                }
+
+                delay(2500) // Wait for async peer connections
+                val channelsInGraph = networkGraph?.read_only()?.list_channels()?.size
+                LdkEventEmitter.send(EventTypes.native_log, "Channels found in graph: $channelsInGraph")
+                LdkEventEmitter.send(EventTypes.native_log, "Peers connected: ${peerManager?.list_peers()?.size}")
+                LdkEventEmitter.send(EventTypes.native_log, "Restart complete. Attempting to retry payment after graph reset...")
+
+                val (paymentId2, error2) = handlePayment(paymentRequest, amountSats, timeoutSeconds)
+                withContext(Dispatchers.Main) {
+                    if (error2 != null) {
+                        LdkEventEmitter.send(EventTypes.native_log, "Failed to retry payment after graph reset: $error2")
+                        handleReject(promise, error2)
+                    } else {
+                        LdkEventEmitter.send(EventTypes.native_log, "Successfully retried payment after graph reset")
+                        promise.resolve(paymentId2)
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    handleReject(promise, originalError)
+                }
+            }
+        }
     }
 
     @ReactMethod
@@ -1158,14 +1185,10 @@ class LdkModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaMod
         } else {
             // Convert custom records to array of TwoTuples
             val tlvArray = customRecords.map { (type, value) ->
-                TwoTuple_u64CVec_u8ZZ(type, value)
+                TwoTuple_u64CVec_u8ZZ.of(type, value)
             }.toTypedArray()
 
-            RecipientOnionFields.init(
-                preimage,
-                null, // payment_metadata
-                tlvArray
-            )
+            RecipientOnionFields.spontaneous_empty()
         }
 
         // Create route parameters for spontaneous payment
@@ -1175,15 +1198,14 @@ class LdkModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaMod
             false // allow_mpp
         )
 
-        val routeParams = RouteParameters.init(
+        val routeParams = RouteParameters.from_payment_params_and_value(
             paymentParams,
-            (amountSats * 1000).toLong(), // final_value_msat
-            null // max_total_routing_fee_msat
+            (amountSats * 1000).toLong() // final_value_msat
         )
 
         // Send spontaneous payment with retry
         val result = channelManager!!.send_spontaneous_payment_with_retry(
-            preimage,
+            Option_ThirtyTwoBytesZ.some(preimage),
             recipientOnion,
             paymentId,
             routeParams,
