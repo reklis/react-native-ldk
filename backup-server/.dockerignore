@@ -1,0 +1,12 @@
+.git
+.env
+.env.*
+!.env.template
+*.key
+*.p8
+*.pem
+*credential*.json
+*service-account*.json
+node_modules
+npm-debug.log*
+local-storage

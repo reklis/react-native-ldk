@@ -88,6 +88,13 @@ fastify.route({
             return {error: "Missing public key, timestamp or signature"};
         }
 
+        const timestampNumber = Number(timestamp);
+        if (!Number.isFinite(timestampNumber) || Math.abs(Date.now() - timestampNumber) > 60 * 1000) {
+            fastify.log.error("Expired or invalid timestamp");
+            reply.code(400);
+            return {error: "Expired or invalid timestamp"};
+        }
+
         //Verify timestamp was signed by pubkey
         const derivedNodeId = deriveNodeId(signature, `${signedMessagePrefix}${timestamp}`);
         if (derivedNodeId !== pubkey) {
@@ -96,6 +103,8 @@ fastify.route({
             reply.code(401);
             return {error: "Unauthorized"};
         }
+
+        challenges.delete(pubkey);
 
         //Challenges don't need to live long, follow-up response should always be near instant
         const challenge = crypto.randomBytes(32).toString('hex');
@@ -136,6 +145,8 @@ fastify.route({
             return {error: "Unauthorized"};
         }
 
+        challenges.delete(pubkey);
+
         const bearer = crypto.randomBytes(32).toString('hex');
 
         //Valid for 5min, should only be used for doing a restore
@@ -158,9 +169,10 @@ const authRetrieveCheckHandler = async (request, reply) => {
     const {expires} = users.get(bearerToken);
     //Check if expired
     if (expires < Date.now()) {
+        users.delete(bearerToken);
         fastify.log.error("Expired token");
         reply.code(401);
-        reply.send({error: "Expired token"});
+        return reply.send({error: "Expired token"});
     }
 }
 
